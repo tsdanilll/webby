@@ -1,147 +1,176 @@
-import React, { useState, useCallback, useMemo } from 'react';
-import './App.css';
+import React, { useEffect, useMemo, useCallback, useState } from "react";
+import "./index.css"; // styles below
 
+const API_URL = "https://4lugw2l2ooxz2c6po5ytwycmru0myjsx.lambda-url.us-east-1.on.aws/";
 const MAX_TASKS = 10;
 const MAX_CHARS = 200;
 const GRAY_BOX_WIDTH = 400;
 
-const TaskList = React.memo(function TaskList({ tasks, onRemove }) {
+function TaskList({ tasks, onRemove, onComplete }) {
   if (tasks.length === 0) {
-    return (
-      <span style={{ color: '#888', textAlign: 'center' }}>No tasks yet.</span>
-    );
+    return <span className="muted center">No tasks yet.</span>;
   }
   return (
     <>
-      {tasks.map(task => (
+      {tasks.map((t) => (
         <div
-          key={task.id}
+          key={t.id}
+          className="row"
           style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            padding: '4px 0',
-            borderBottom: '1px solid #e0e0e0',
-            wordBreak: 'break-word'
+            opacity: t.is_done ? 0.6 : 1,
+            textDecoration: t.is_done ? "line-through" : "none",
           }}
         >
-          <span style={{ flex: 1 }}>{task.text}</span>
-          <button
-            onClick={() => onRemove(task.id)}
-            style={{
-              color: 'white',
-              background: '#e74c3c',
-              border: 'none',
-              borderRadius: 4,
-              padding: '4px 12px',
-              cursor: 'pointer',
-              marginLeft: 8
-            }}
-          >
-            Remove
-          </button>
+          <span className="row-title">{t.title}</span>
+          <div className="row-actions">
+            {!t.is_done && (
+              <button className="btn success" onClick={() => onComplete(t.id)}>
+                Complete
+              </button>
+            )}
+            <button className="btn danger" onClick={() => onRemove(t.id)}>
+              Remove
+            </button>
+          </div>
         </div>
       ))}
     </>
   );
-});
+}
 
 export default function App() {
   const [tasks, setTasks] = useState([]);
-  const [input, setInput] = useState('');
+  const [input, setInput] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  const charsLeft = useMemo(() => MAX_CHARS - input.length, [input]);
-
-  const handleAddTask = useCallback(() => {
-    const trimmed = input.trim();
-    if (trimmed && tasks.length < MAX_TASKS) {
-      setTasks(prevTasks => [
-        ...prevTasks,
-        { id: Date.now(), text: trimmed }
-      ]);
-      setInput('');
+  const fetchTasks = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await fetch(API_URL);
+      const data = await res.json();
+      // Incomplete first, then completed; newest first within each group
+      data.sort((a, b) => (a.is_done === b.is_done ? b.id - a.id : a.is_done ? 1 : -1));
+      setTasks(data);
+    } catch (e) {
+      console.error(e);
+      alert("Failed to load todos");
+    } finally {
+      setLoading(false);
     }
-  }, [input, tasks.length]);
-
-  const handleRemoveTask = useCallback((id) => {
-    setTasks(prevTasks => prevTasks.filter(task => task.id !== id));
   }, []);
 
-  const handleInputChange = useCallback((e) => {
-    setInput(e.target.value);
-  }, []);
+  useEffect(() => {
+    fetchTasks();
+  }, [fetchTasks]);
 
-  const handleInputKeyDown = useCallback((e) => {
-    if (e.key === 'Enter') {
-      handleAddTask();
+  const incomplete = useMemo(() => tasks.filter((t) => !t.is_done), [tasks]);
+  const completed = useMemo(() => tasks.filter((t) => t.is_done), [tasks]);
+  const charsLeft = MAX_CHARS - input.length;
+
+  const isAddDisabled =
+    input.trim().length === 0 || incomplete.length >= MAX_TASKS || charsLeft < 0 || loading;
+
+  const handleAdd = useCallback(async () => {
+    const title = input.trim();
+    if (!title || incomplete.length >= MAX_TASKS || charsLeft < 0) return;
+    setLoading(true);
+    try {
+      await fetch(API_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title }),
+      });
+      setInput("");
+      await fetchTasks();
+    } catch (e) {
+      console.error(e);
+      alert("Failed to add todo");
+    } finally {
+      setLoading(false);
     }
-  }, [handleAddTask]);
+  }, [input, incomplete.length, charsLeft, fetchTasks]);
 
-  const isAddDisabled = useMemo(
-    () => input.trim().length === 0 || tasks.length >= MAX_TASKS,
-    [input, tasks.length]
+  const handleRemove = useCallback(
+    async (id) => {
+      setLoading(true);
+      try {
+        await fetch(API_URL + id, { method: "DELETE" });
+        await fetchTasks();
+      } catch (e) {
+        console.error(e);
+        alert("Failed to remove todo");
+      } finally {
+        setLoading(false);
+      }
+    },
+    [fetchTasks]
   );
 
+  const handleComplete = useCallback(
+    async (id) => {
+      setLoading(true);
+      try {
+        await fetch(API_URL + id, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ is_done: true }),
+        });
+        await fetchTasks();
+      } catch (e) {
+        console.error(e);
+        alert("Failed to complete todo");
+      } finally {
+        setLoading(false);
+      }
+    },
+    [fetchTasks]
+  );
+
+  const onKeyDown = (e) => {
+    if (e.key === "Enter") handleAdd();
+  };
+
   return (
-    <div className="App" style={{ maxWidth: 425, margin: '0 auto', padding: 40 }}>
+    <div className="wrap">
       <h1>To-Do List</h1>
-      <div style={{ marginBottom: 16 }}>
+
+      <div className="input-row">
         <input
           type="text"
-          maxLength={MAX_CHARS}
           value={input}
-          onChange={handleInputChange}
-          onKeyDown={handleInputKeyDown}
+          maxLength={MAX_CHARS}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={onKeyDown}
           placeholder="Enter a new task..."
-          style={{ width: '70%', padding: 8, fontSize: 16 }}
-          disabled={tasks.length >= MAX_TASKS}
+          disabled={incomplete.length >= MAX_TASKS || loading}
         />
-        <button
-          onClick={handleAddTask}
-          style={{ marginLeft: 8, padding: '8px 16px', fontSize: 16 }}
-          disabled={isAddDisabled}
-        >
+        <button className="btn" onClick={handleAdd} disabled={isAddDisabled}>
           Add task
         </button>
-        <div style={{ fontSize: 12, color: charsLeft < 0 ? 'red' : '#888', marginTop: 4 }}>
-          {charsLeft} characters left
-        </div>
       </div>
-      {/* First gray box: task counter */}
-      <div
-        style={{
-          width: GRAY_BOX_WIDTH,
-          margin: '0 auto 8px auto',
-          background: '#f0f0f0',
-          borderRadius: 4,
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'center',
-          minHeight: 32,
-          padding: 8,
-        }}
-      >
-        <span style={{ fontWeight: 'bold', fontSize: 16 }}>
-          Tasks: {tasks.length} / {MAX_TASKS}
+
+      <div className="muted small">{charsLeft} characters left</div>
+
+      <div className="panel" style={{ width: GRAY_BOX_WIDTH }}>
+        <span className="count">
+          <b>Tasks:</b> {incomplete.length} / {MAX_TASKS}
         </span>
       </div>
-      {/* Second gray box: list of tasks */}
-      <div
-        style={{
-          width: GRAY_BOX_WIDTH,
-          margin: '0 auto 16px auto',
-          background: '#f0f0f0',
-          borderRadius: 4,
-          minHeight: 32,
-          padding: 8,
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'stretch',
-          justifyContent: tasks.length === 0 ? 'center' : 'flex-start',
-        }}
-      >
-        <TaskList tasks={tasks} onRemove={handleRemoveTask} />
+
+      <div className="panel list" style={{ width: GRAY_BOX_WIDTH }}>
+        {loading ? (
+          <span className="muted center">Loading...</span>
+        ) : (
+          <>
+            <TaskList tasks={incomplete} onRemove={handleRemove} onComplete={handleComplete} />
+            {completed.length > 0 && (
+              <>
+                <div className="divider">Completed</div>
+                <TaskList tasks={completed} onRemove={handleRemove} onComplete={() => {}} />
+              </>
+            )}
+          </>
+        )}
       </div>
     </div>
   );
