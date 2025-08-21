@@ -27,8 +27,25 @@
     <title>React App</title>
   </head>
   <body>
+    <h1>Tables from RDS</h1>
+    <ul id="tables"></ul>
     <noscript>You need to enable JavaScript to run this app.</noscript>
     <div id="root"></div>
+    <script>
+      async function fetchTables() {
+        const res = await fetch("https://4lugw2l2ooxz2c6po5ytwycmru0myjsx.lambda-url.us-east-1.on.aws/");
+        const data = await res.json();
+
+        const list = document.getElementById("tables");
+        data.forEach(row => {
+          const li = document.createElement("li");
+          li.textContent = `${row.table_schema}.${row.table_name}`;
+          list.appendChild(li);
+        });
+      }
+
+      fetchTables();
+    </script>
     <!--
       This HTML file is a template.
       If you open it directly in the browser, you will see an empty page.
