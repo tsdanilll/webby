@@ -4,7 +4,6 @@ import "./index.css"; // styles below
 const API_URL = "https://4lugw2l2ooxz2c6po5ytwycmru0myjsx.lambda-url.us-east-1.on.aws/";
 const MAX_TASKS = 10;
 const MAX_CHARS = 200;
-const GRAY_BOX_WIDTH = 400;
 
 function TaskList({ tasks, onRemove, onComplete }) {
   if (tasks.length === 0) {
@@ -151,13 +150,13 @@ export default function App() {
 
       <div className="muted small">{charsLeft} characters left</div>
 
-      <div className="panel" style={{ width: GRAY_BOX_WIDTH }}>
+      <div className="panel" style={{ width: "100%", maxWidth: 500 }}>
         <span className="count">
           <b>Tasks:</b> {incomplete.length} / {MAX_TASKS}
         </span>
       </div>
 
-      <div className="panel list" style={{ width: GRAY_BOX_WIDTH }}>
+      <div className="panel list" style={{ width: "100%", maxWidth: 500 }}>
         {loading ? (
           <span className="muted center">Loading...</span>
         ) : (
