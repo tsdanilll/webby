@@ -1,78 +1,16 @@
 import React, { useEffect, useState, useCallback, useMemo } from "react";
+import { signedFetch } from "./aws"; // ← our IAM-signed fetch helper
 
-// === AWS IAM AUTH IMPORTS ===
-import { fromCognitoIdentityPool } from "@aws-sdk/credential-providers";
-import { SignatureV4 } from "@aws-sdk/signature-v4";
-import { Sha256 } from "@aws-crypto/sha256-browser";
+// UI limits (keep in sync with backend validation if you change)
+const MAX_TASKS = 10;
+const MAX_CHARS = 200;
 
-// === CONFIG ===
-const AWS_REGION = "us-east-1"; // 🔹 your region
-const IDENTITY_POOL_ID = "us-east-1:442221f0-0b04-4480-8a25-b086fd0f28e0"; // 🔹 your Cognito pool ID
-const API_URL = "https://4lugw2l2ooxz2c6po5ytwycmru0myjsx.lambda-url.us-east-1.on.aws/"; // 🔹 your Lambda Function URL
+// Small helper to sort: incomplete first, then newest
+const sortTasks = (a, b) => (a.is_done === b.is_done ? b.id - a.id : a.is_done ? 1 : -1);
 
-// === SIGNED FETCH HELPER ===
-const urlObj = new URL(API_URL);
-const LAMBDA_HOSTNAME = urlObj.host;
-const LAMBDA_PROTOCOL = urlObj.protocol;
-const LAMBDA_BASEPATH = urlObj.pathname.endsWith("/")
-  ? urlObj.pathname.slice(0, -1)
-  : urlObj.pathname;
-
-const credentialsProvider = fromCognitoIdentityPool({
-  identityPoolId: IDENTITY_POOL_ID,
-  clientConfig: { region: AWS_REGION },
-});
-
-const signer = new SignatureV4({
-  service: "lambda",
-  region: AWS_REGION,
-  credentials: credentialsProvider,
-  sha256: Sha256,
-});
-
-async function signedFetch(method, path = "/", bodyObj = null) {
-  const norm = path.startsWith("/") ? path : `/${path}`;
-  const fullPath = (LAMBDA_BASEPATH || "") + norm;
-  const body = bodyObj ? JSON.stringify(bodyObj) : undefined;
-
-  const signed = await signer.sign({
-    method,
-    protocol: LAMBDA_PROTOCOL,
-    hostname: LAMBDA_HOSTNAME,
-    path: fullPath || "/",
-    headers: {
-      host: LAMBDA_HOSTNAME,
-      "content-type": body ? "application/json" : undefined,
-    },
-    body,
-  });
-
-  const res = await fetch(
-    `${LAMBDA_PROTOCOL}//${LAMBDA_HOSTNAME}${fullPath || "/"}`,
-    {
-      method,
-      headers: signed.headers,
-      body,
-    }
-  );
-
-  const text = await res.text();
-  let data;
-  try {
-    data = text ? JSON.parse(text) : null;
-  } catch {
-    data = { raw: text };
-  }
-  if (!res.ok) throw new Error(`HTTP ${res.status}: ${JSON.stringify(data)}`);
-  return data;
-}
-
-// === UI COMPONENTS ===
-function TaskList({ tasks, onRemove, onComplete }) {
+function TaskList({ tasks, onRemove, onComplete, disabled }) {
   if (tasks.length === 0) {
-    return (
-      <span style={{ color: "#888", textAlign: "center" }}>No tasks yet.</span>
-    );
+    return <span style={{ color: "#888", textAlign: "center" }}>No tasks yet.</span>;
   }
   return (
     <>
@@ -83,42 +21,31 @@ function TaskList({ tasks, onRemove, onComplete }) {
             display: "flex",
             alignItems: "center",
             justifyContent: "space-between",
-            padding: "4px 0",
+            padding: "8px 0",
             borderBottom: "1px solid #e0e0e0",
             wordBreak: "break-word",
             opacity: task.is_done ? 0.6 : 1,
             textDecoration: task.is_done ? "line-through" : "none",
+            gap: 8,
           }}
         >
           <span style={{ flex: 1 }}>{task.title}</span>
-          <div>
+          <div style={{ display: "flex", gap: 8 }}>
             {!task.is_done && (
               <button
                 onClick={() => onComplete(task.id)}
-                style={{
-                  color: "white",
-                  background: "#27ae60",
-                  border: "none",
-                  borderRadius: 4,
-                  padding: "4px 12px",
-                  cursor: "pointer",
-                  marginLeft: 8,
-                }}
+                disabled={disabled}
+                style={btnStyle("#27ae60")}
+                aria-label={`Complete ${task.title}`}
               >
                 Complete
               </button>
             )}
             <button
               onClick={() => onRemove(task.id)}
-              style={{
-                color: "white",
-                background: "#e74c3c",
-                border: "none",
-                borderRadius: 4,
-                padding: "4px 12px",
-                cursor: "pointer",
-                marginLeft: 8,
-              }}
+              disabled={disabled}
+              style={btnStyle("#e74c3c")}
+              aria-label={`Remove ${task.title}`}
             >
               Remove
             </button>
@@ -129,28 +56,32 @@ function TaskList({ tasks, onRemove, onComplete }) {
   );
 }
 
-// === MAIN APP ===
-function App() {
+const btnStyle = (bg) => ({
+  color: "#fff",
+  background: bg,
+  border: "none",
+  borderRadius: 6,
+  padding: "8px 12px",
+  cursor: "pointer",
+});
+
+export default function App() {
   const [tasks, setTasks] = useState([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [checking, setChecking] = useState(false); // health check
+  const [error, setError] = useState("");
 
-  const MAX_TASKS = 10;
-  const MAX_CHARS = 200;
-
-  // Fetch tasks
   const fetchTasks = useCallback(async () => {
     setLoading(true);
+    setError("");
     try {
       const data = await signedFetch("GET", "/");
-      data.sort((a, b) => {
-        if (a.is_done === b.is_done) return b.id - a.id;
-        return a.is_done ? 1 : -1;
-      });
+      data.sort(sortTasks);
       setTasks(data);
     } catch (err) {
-      console.error("Error fetching todos:", err);
-      alert("Failed to load todos.");
+      console.error("GET / failed:", err);
+      setError("Failed to load todos.");
     } finally {
       setLoading(false);
     }
@@ -160,180 +91,236 @@ function App() {
     fetchTasks();
   }, [fetchTasks]);
 
-  const charsLeft = useMemo(() => MAX_CHARS - input.length, [input]);
+  const charsLeft = MAX_CHARS - input.length;
 
-  const incompleteTasks = useMemo(
-    () => tasks.filter((t) => !t.is_done).slice(0, MAX_TASKS),
-    [tasks]
-  );
-  const completedTasks = useMemo(
-    () => tasks.filter((t) => t.is_done),
-    [tasks]
-  );
+  const incomplete = useMemo(() => tasks.filter((t) => !t.is_done).slice(0, MAX_TASKS), [tasks]);
+  const completed = useMemo(() => tasks.filter((t) => t.is_done), [tasks]);
 
-  const isAddDisabled = useMemo(
-    () =>
-      input.trim().length === 0 ||
-      incompleteTasks.length >= MAX_TASKS ||
-      charsLeft < 0,
-    [input, incompleteTasks.length, charsLeft]
-  );
+  const isAddDisabled =
+    input.trim().length === 0 || incomplete.length >= MAX_TASKS || charsLeft < 0 || loading;
 
-  const handleInputChange = useCallback((e) => {
-    setInput(e.target.value);
-  }, []);
+  const handleAdd = useCallback(async () => {
+    const title = input.trim();
+    if (!title || incomplete.length >= MAX_TASKS || charsLeft < 0) return;
 
-  const handleInputKeyDown = useCallback(
-    (e) => {
-      if (e.key === "Enter") {
-        handleAddTask();
-      }
-    },
-    [input, incompleteTasks.length, charsLeft]
-  );
+    // optimistic UX
+    const tempId = Math.max(0, ...tasks.map((t) => t.id)) + 1;
+    const optimistic = [{ id: tempId, title, is_done: false }, ...tasks];
+    setTasks(optimistic);
+    setInput("");
 
-  const handleAddTask = useCallback(async () => {
-    const trimmed = input.trim();
-    if (trimmed && incompleteTasks.length < MAX_TASKS && charsLeft >= 0) {
-      setLoading(true);
-      try {
-        await signedFetch("POST", "/", { title: trimmed });
-        setInput("");
-        await fetchTasks();
-      } catch (err) {
-        console.error("Error adding todo:", err);
-        alert("Failed to add todo.");
-      } finally {
-        setLoading(false);
-      }
+    try {
+      await signedFetch("POST", "/", { title });
+      await fetchTasks(); // re-sync with server
+    } catch (err) {
+      console.error("POST / failed:", err);
+      setTasks(tasks); // rollback
+      setError("Failed to add todo.");
     }
-  }, [input, incompleteTasks.length, charsLeft, fetchTasks]);
+  }, [input, incomplete.length, charsLeft, tasks, fetchTasks]);
 
-  const handleRemoveTask = useCallback(
+  const handleRemove = useCallback(
     async (id) => {
-      setLoading(true);
+      const prev = tasks;
+      setTasks(prev.filter((t) => t.id !== id));
       try {
         await signedFetch("DELETE", `/${id}`);
         await fetchTasks();
       } catch (err) {
-        console.error("Error removing todo:", err);
-        alert("Failed to remove todo.");
-      } finally {
-        setLoading(false);
+        console.error("DELETE /:id failed:", err);
+        setTasks(prev); // rollback
+        setError("Failed to remove todo.");
       }
     },
-    [fetchTasks]
+    [tasks, fetchTasks]
   );
 
-  const handleCompleteTask = useCallback(
+  const handleComplete = useCallback(
     async (id) => {
-      setLoading(true);
+      const prev = tasks;
+      setTasks(prev.map((t) => (t.id === id ? { ...t, is_done: true } : t)));
       try {
         await signedFetch("PATCH", `/${id}`, { is_done: true });
         await fetchTasks();
       } catch (err) {
-        console.error("Error completing todo:", err);
-        alert("Failed to complete todo.");
-      } finally {
-        setLoading(false);
+        console.error("PATCH /:id failed:", err);
+        setTasks(prev); // rollback
+        setError("Failed to complete todo.");
       }
     },
-    [fetchTasks]
+    [tasks, fetchTasks]
   );
 
+  const onKeyDown = (e) => e.key === "Enter" && handleAdd();
+
+  const healthCheck = async () => {
+    setChecking(true);
+    setError("");
+    try {
+      const res = await signedFetch("GET", "/health");
+      alert(`Health: ${res?.ok ? "OK" : "NOT OK"} ${res?.ok ? "" : JSON.stringify(res)}`);
+    } catch (e) {
+      console.error("GET /health failed:", e);
+      setError("Health check failed.");
+    } finally {
+      setChecking(false);
+    }
+  };
+
   return (
-    <div style={{ maxWidth: 425, margin: "0 auto", padding: 40 }}>
-      <h1>To-do list</h1>
-      <div style={{ marginBottom: 16 }}>
+    <div style={{ margin: "0 auto", padding: 24, maxWidth: 560 }}>
+      <h1 style={{ textAlign: "center", margin: "8px 0 16px" }}>To-do list</h1>
+
+      {/* Controls */}
+      <div
+        style={{
+          display: "flex",
+          gap: 8,
+          flexWrap: "wrap",
+          alignItems: "center",
+          justifyContent: "center",
+          marginBottom: 12,
+        }}
+      >
         <input
           type="text"
           maxLength={MAX_CHARS}
           value={input}
-          onChange={handleInputChange}
-          onKeyDown={handleInputKeyDown}
-          placeholder="Enter a new task..."
-          style={{ width: "70%", padding: 8, fontSize: 16 }}
-          disabled={incompleteTasks.length >= MAX_TASKS || loading}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={onKeyDown}
+          placeholder="Enter a new task…"
+          style={{
+            flex: "1 1 260px",
+            padding: 10,
+            fontSize: 16,
+            border: "1px solid #cfcfcf",
+            borderRadius: 6,
+            minWidth: 220,
+          }}
+          disabled={incomplete.length >= MAX_TASKS || loading}
+          aria-label="New task"
         />
         <button
-          onClick={handleAddTask}
-          style={{ marginLeft: 8, padding: "8px 16px", fontSize: 16 }}
-          disabled={isAddDisabled || loading}
+          onClick={handleAdd}
+          disabled={isAddDisabled}
+          style={{
+            padding: "10px 16px",
+            fontSize: 16,
+            borderRadius: 6,
+            border: "none",
+            background: "#111",
+            color: "#fff",
+            cursor: "pointer",
+          }}
         >
           Add task
         </button>
-        <div
+        <button
+          onClick={healthCheck}
+          disabled={checking}
           style={{
-            fontSize: 12,
-            color: charsLeft < 0 ? "red" : "#888",
-            marginTop: 4,
+            padding: "10px 16px",
+            fontSize: 14,
+            borderRadius: 6,
+            border: "1px solid #cfcfcf",
+            background: "#f7f7f7",
+            cursor: "pointer",
           }}
+          title="DB connectivity check"
         >
-          {charsLeft} characters left
-        </div>
+          {checking ? "Checking…" : "Health"}
+        </button>
       </div>
 
       <div
         style={{
-          width: 400,
-          margin: "0 auto 8px auto",
-          background: "#f0f0f0",
-          borderRadius: 4,
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          justifyContent: "center",
-          minHeight: 32,
-          padding: 8,
+          textAlign: "center",
+          fontSize: 12,
+          color: charsLeft < 0 ? "red" : "#666",
+          marginBottom: 8,
         }}
       >
-        <span style={{ fontWeight: "bold", fontSize: 16 }}>
-          Tasks: {incompleteTasks.length} / {MAX_TASKS}
-        </span>
+        {charsLeft} characters left
       </div>
 
+      {/* Counters */}
       <div
         style={{
-          width: 400,
-          margin: "0 auto 16px auto",
+          width: "100%",
+          maxWidth: 520,
+          margin: "0 auto 8px",
           background: "#f0f0f0",
-          borderRadius: 4,
+          borderRadius: 6,
           minHeight: 32,
-          padding: 8,
+          padding: 10,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          fontWeight: 600,
+        }}
+      >
+        Tasks: {incomplete.length} / {MAX_TASKS}
+      </div>
+
+      {/* List */}
+      <div
+        style={{
+          width: "100%",
+          maxWidth: 520,
+          margin: "0 auto 16px",
+          background: "#f0f0f0",
+          borderRadius: 6,
+          minHeight: 48,
+          padding: 12,
           display: "flex",
           flexDirection: "column",
           alignItems: "stretch",
-          justifyContent:
-            incompleteTasks.length + completedTasks.length === 0
-              ? "center"
-              : "flex-start",
         }}
       >
+        {error && (
+          <div
+            style={{
+              background: "#ffe8e6",
+              color: "#b0413e",
+              border: "1px solid #f5c2c0",
+              padding: 8,
+              borderRadius: 6,
+              marginBottom: 8,
+              fontSize: 14,
+            }}
+          >
+            {error}
+          </div>
+        )}
+
         {loading ? (
-          <span style={{ color: "#888", textAlign: "center" }}>Loading...</span>
+          <span style={{ color: "#888", textAlign: "center" }}>Loading…</span>
         ) : (
           <>
             <TaskList
-              tasks={incompleteTasks}
-              onRemove={handleRemoveTask}
-              onComplete={handleCompleteTask}
+              tasks={incomplete}
+              onRemove={handleRemove}
+              onComplete={handleComplete}
+              disabled={loading}
             />
-            {completedTasks.length > 0 && (
+            {completed.length > 0 && (
               <>
                 <div
                   style={{
                     borderTop: "1px solid #ccc",
-                    margin: "8px 0 4px 0",
+                    margin: "8px 0 4px",
                     fontSize: 13,
                     color: "#888",
+                    paddingTop: 6,
                   }}
                 >
                   Completed
                 </div>
                 <TaskList
-                  tasks={completedTasks}
-                  onRemove={handleRemoveTask}
+                  tasks={completed}
+                  onRemove={handleRemove}
                   onComplete={() => {}}
+                  disabled={loading}
                 />
               </>
             )}
@@ -343,5 +330,3 @@ function App() {
     </div>
   );
 }
-
-export default App;
