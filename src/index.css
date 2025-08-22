@@ -1,121 +1,198 @@
+/* ===== Base ===== */
+:root {
+  --bg: #fafafa;
+  --text: #111;
+  --muted: #888;
+  --panel: #f3f4f6;
+  --border: #e5e7eb;
+  --primary: #111;
+  --success: #27ae60;
+  --danger: #e74c3c;
+  --danger-soft: #f59b90;
+  --radius: 10px;
+  --shadow: 0 1px 1px rgba(0,0,0,.03), 0 4px 10px rgba(0,0,0,.04);
+  --maxW: 680px;
+}
+
+* { box-sizing: border-box; }
 body {
   margin: 0;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  color: #111;
-  background: #fafafa;
+  color: var(--text);
+  background: var(--bg);
 }
 
+/* ===== Header ===== */
 h1 {
   text-align: center;
-  margin: 24px 0 12px;
-  font-weight: 700;
-  font-size: 1.8rem;
+  margin: 22px 0 14px;
+  font-weight: 800;
+  font-size: 2rem;
 }
 
+/* ===== Layout ===== */
 .wrap {
-  max-width: 600px;
+  width: 100%;
+  max-width: var(--maxW);
   margin: 0 auto;
-  padding: 16px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
+  padding: 8px 16px 28px;
 }
 
-/* Input row adapts */
+/* ===== Input Row (input + Add task + Health) ===== */
 .input-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  justify-content: center;
-  width: 100%;
-}
-.input-row input {
-  flex: 1;
-  min-width: 200px;
-  padding: 12px;
-  border: 1px solid #ccc;
-  border-radius: 6px;
-  font-size: 16px;
-}
-.input-row button {
-  padding: 12px 16px;
-  font-size: 16px;
-  border-radius: 6px;
-}
-
-/* Info text */
-.muted { color: #777; }
-.small { font-size: 13px; margin-top: 6px; }
-.center { text-align: center; width: 100%; }
-
-/* Panels */
-.panel {
-  background: #f0f0f0;
-  border-radius: 6px;
-  padding: 12px;
-  margin: 10px auto;
-  min-height: 32px;
-  display: flex;
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 12px;
   align-items: center;
-  justify-content: center;
-  width: 100%;
-  max-width: 500px;
-}
-.panel.list {
-  align-items: stretch;
-  flex-direction: column;
+  margin-bottom: 6px;
 }
 
-/* Task rows */
-.row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  padding: 8px 0;
-  border-bottom: 1px solid #e0e0e0;
-  word-break: break-word;
+.input {
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  font-size: 16px;
+  background: #fff;
+  outline: none;
+  transition: box-shadow .15s ease, border-color .15s ease;
 }
-.row-title {
-  flex: 1;
-  padding-right: 8px;
+.input:focus {
+  border-color: #111;
+  box-shadow: 0 0 0 3px rgba(17,17,17,.08);
+}
+
+/* Little helper under the input */
+.help {
+  display: block;
+  text-align: center;
+  color: #a3a3a3;
+  font-size: 12px;
+  margin: 6px 0 14px;
+}
+
+/* ===== Buttons ===== */
+.btn {
+  appearance: none;
+  border: none;
+  border-radius: 8px;
+  padding: 10px 16px;
   font-size: 15px;
+  cursor: pointer;
+  transition: transform .02s ease, opacity .15s ease, background .15s ease, color .15s ease, border-color .15s ease;
+  user-select: none;
 }
+.btn:active { transform: translateY(1px); }
+.btn:disabled { opacity: .6; cursor: not-allowed; }
+
+.btn-primary {
+  background: var(--primary);
+  color: #fff;
+}
+.btn-primary:hover { background: #000; }
+
+.btn-ghost {
+  background: #fff;
+  color: var(--text);
+  border: 1px solid #d0d5dd;
+}
+.btn-ghost:hover { border-color: #c3c7cf; }
+
+.btn-success { background: var(--success); color: #fff; }
+.btn-success:hover { filter: brightness(.95); }
+
+.btn-danger { background: var(--danger); color: #fff; }
+.btn-danger:hover { filter: brightness(.95); }
+
+/* softer red used for completed Remove buttons (optional) */
+.btn-danger.soft { background: var(--danger-soft); }
+
+/* ===== Panels ===== */
+.panel {
+  background: var(--panel);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  width: 100%;
+}
+
+.counter {
+  padding: 10px 12px;
+  text-align: center;
+  font-weight: 700;
+  margin-bottom: 14px;
+}
+
+/* Main list container */
+.list {
+  padding: 8px 10px;
+}
+
+/* ===== Row ===== */
+.row {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 10px;
+  align-items: center;
+  padding: 10px 6px;
+  border-bottom: 1px solid var(--border);
+}
+.row:last-child { border-bottom: none; }
+
+.row-title {
+  font-size: 15px;
+  line-height: 1.35;
+  word-break: break-word;
+  color: var(--text);
+}
+.row.completed .row-title {
+  text-decoration: line-through;
+  opacity: .6;
+}
+
+/* Button group in rows */
 .row-actions {
   display: flex;
-  gap: 6px;
-  margin-top: 6px;
+  gap: 10px;
 }
 
-/* Buttons */
-.btn {
-  padding: 10px 14px;
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: 14px;
-}
-.btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-.btn.success { background: #27ae60; color: #fff; }
-.btn.danger { background: #e74c3c; color: #fff; }
-
-/* Divider */
+/* ===== Divider for Completed section ===== */
 .divider {
-  border-top: 1px solid #ccc;
-  margin: 8px 0 4px;
+  border-top: 1px solid var(--border);
+  margin: 8px 0 6px;
+  padding-top: 8px;
+  color: #8f8f8f;
   font-size: 13px;
-  color: #888;
-  padding-top: 6px;
 }
 
-/* ✅ Mobile tweaks */
-@media (max-width: 480px) {
-  h1 { font-size: 1.5rem; }
-  .input-row { flex-direction: column; align-items: stretch; }
-  .input-row input, .input-row button { width: 100%; }
-  .row-actions { width: 100%; justify-content: flex-end; }
-  .row-actions .btn { flex: 1; }
+/* ===== Alerts (errors etc.) ===== */
+.alert {
+  background: #fee2e2;
+  border: 1px solid #fecaca;
+  color: #991b1b;
+  padding: 8px 10px;
+  border-radius: 8px;
+  margin-bottom: 10px;
+}
+
+/* ===== Card spacing (the grey blocks) ===== */
+.card {
+  padding: 10px;
+  margin: 10px 0 14px;
+}
+
+/* ===== Mobile ===== */
+@media (max-width: 560px) {
+  h1 { font-size: 1.7rem; }
+  .input-row {
+    grid-template-columns: 1fr;
+  }
+  .row {
+    grid-template-columns: 1fr;
+  }
+  .row-actions {
+    justify-content: flex-end;
+  }
+  .row-actions .btn {
+    min-width: 110px;
+  }
 }
